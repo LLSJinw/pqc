@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import time
-import re
 
 st.set_page_config(page_title="🔐 PQC SSL/TLS Risk Analyzer", page_icon="🔐")
 st.title("🔐 PQC SSL/TLS Risk Analyzer (via SSL Labs API)")
@@ -30,9 +29,11 @@ def poll_analysis(hostname):
     return None, "Scan timed out."
 
 def determine_pqc_risk(cert_key_alg, key_size, tls_versions):
+    if cert_key_alg in ("Dilithium", "Kyber"):  # Future-proof PQC names
+        return "🟢 PQC-ready"
     if cert_key_alg != "RSA" or key_size >= 4096:
         return "🟢 Low PQC Risk"
-    if "TLS 1.3" in tls_versions:
+    if "TLS 1.3" in tls_versions and cert_key_alg == "ECDSA":
         return "🟡 Moderate PQC Risk"
     return "🔴 High PQC Risk"
 
@@ -52,7 +53,10 @@ if st.button("Run PQC Check") and hostname:
             st.success("✅ Analysis complete!")
             try:
                 endpoint = data.get("endpoints", [{}])[0]
-                details_resp = requests.get(f"{API_BASE}/getEndpointData", params={"host": hostname, "s": endpoint.get("ipAddress"), "fromCache": "on"})
+                details_resp = requests.get(
+                    f"{API_BASE}/getEndpointData",
+                    params={"host": hostname, "s": endpoint.get("ipAddress"), "fromCache": "on"}
+                )
                 details = details_resp.json()
                 cert = details.get("details", {}).get("cert", {})
                 protocols = details.get("details", {}).get("protocols", [])
@@ -67,10 +71,14 @@ if st.button("Run PQC Check") and hostname:
                 st.markdown(f"**TLS Versions:** {tls_versions if tls_versions else 'Unknown'}")
                 st.markdown(f"**PQC Risk Level:** {pqc_risk}")
 
+                # Optional debug block for raw data
+                st.markdown("### 🐞 Raw Endpoint Details (for debugging)")
+                st.code(details, language='json')
+
             except Exception as e:
                 st.error(f"Error parsing response: {e}")
 
-        st.markdown("### 🐞 Debug Log")
+        st.markdown("### 🐞 Debug Log (Initial API Response)")
         st.code(response.text)
 else:
     st.caption("Enter a valid public hostname to check SSL/TLS parameters")
